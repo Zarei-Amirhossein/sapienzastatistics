@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Continuous Time Attack Simulator</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    input, label, button { margin: 5px; }
+    canvas { border: 1px solid #ccc; margin-top: 20px; }
+    h2 { margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Continuous Time Attack Simulator</h1>
+  <p>
+    This simulation approximates a continuous‐time attack process. The total simulation time (T)
+    is subdivided into n intervals (dt = T/n). In each interval, for each attacker a “jump” (attack)
+    occurs with probability λ·dt. All important code is included and discussed below.
+  </p>
+
+  <!-- Input form for simulation parameters -->
+  <form id="simForm">
+    <label for="totalTime">Total Simulation Time (T):</label>
+    <input type="number" id="totalTime" value="25" step="0.1" min="0.1" required><br>
+    
+    <label for="intervals">Total Number of Intervals (n):</label>
+    <input type="number" id="intervals" value="100" min="1" required><br>
+    
+    <label for="attackers">Number of Attackers:</label>
+    <input type="number" id="attackers" value="50" min="1" required><br>
+    
+    <label for="lambda">Lambda (Rate of Attack):</label>
+    <input type="number" id="lambda" value="2" step="0.1" min="0" required><br>
+    
+    <button type="submit">Simulate</button>
+  </form>
+
+  <!-- Canvas for drawing the trajectories -->
+  <canvas id="trajectoryCanvas" width="800" height="400"></canvas>
+  <!-- Canvas for drawing the histogram (distribution of final attack counts) -->
+  <canvas id="histogramCanvas" width="400" height="400"></canvas>
+
+  <!-- Container for displaying computed statistics -->
+  <div id="stats"></div>
+
+  <script>
+    "use strict";
+    
+    // AttackSimulator class encapsulates simulation and drawing logic.
+    class AttackSimulator {
+      constructor(totalTime, intervals, numAttackers, lambda) {
+        this.T = totalTime;             // Total simulation time
+        this.n = intervals;             // Number of intervals
+        this.numAttackers = numAttackers;
+        this.lambda = lambda;           // Attack rate (expected total attacks in T)
+        this.dt = this.T / this.n;      // Time increment per interval
+        this.trajectories = [];         // Will store an array of trajectories (each an array of cumulative counts)
+      }
+      
+      // Simulate the process for each attacker.
+      simulate() {
+        this.trajectories = [];
+        for (let attacker = 0; attacker < this.numAttackers; attacker++) {
+          let count = 0;
+          const trajectory = [0];  // Start with count 0 at time 0.
+          for (let i = 1; i <= this.n; i++) {
+            // For each time interval, an attack occurs with probability lambda * dt.
+            if (Math.random() < this.lambda * this.dt) {
+              count++;
+            }
+            trajectory.push(count);
+          }
+          this.trajectories.push(trajectory);
+        }
+      }
+      
+      // Compute the frequency distribution of final attack counts.
+      computeDistribution() {
+        const finalCounts = this.trajectories.map(traj => traj[traj.length - 1]);
+        const maxCount = Math.max(...finalCounts);
+        const distribution = new Array(maxCount + 1).fill(0);
+        for (const count of finalCounts) {
+          distribution[count]++;
+        }
+        return { distribution, finalCounts };
+      }
+      
+      // Draw attacker trajectories (line graph) on a given canvas context.
+      drawTrajectories(ctx, width, height) {
+        ctx.clearRect(0, 0, width, height);
+        // Draw x and y axes.
+        ctx.strokeStyle = '#000';
+        ctx.beginPath();
+        ctx.moveTo(40, height - 30);
+        ctx.lineTo(width - 20, height - 30);
+        ctx.moveTo(40, height - 30);
+        ctx.lineTo(40, 20);
+        ctx.stroke();
+        
+        const xScale = (width - 60) / this.n; // Leave margins.
+        // Find maximum attack count among trajectories for y scaling.
+        let maxCount = 0;
+        for (const traj of this.trajectories) {
+          maxCount = Math.max(maxCount, Math.max(...traj));
+        }
+        const yScale = (height - 50) / (maxCount || 1);
+        
+        // Draw each trajectory with a random color.
+        for (const traj of this.trajectories) {
+          ctx.strokeStyle = this.getRandomColor();
+          ctx.beginPath();
+          for (let i = 0; i < traj.length; i++) {
+            let x = 40 + i * xScale;
+            // Invert y-axis: higher count appears higher.
+            let y = height - 30 - traj[i] * yScale;
+            if (i === 0) {
+              ctx.moveTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+          }
+          ctx.stroke();
+        }
+      }
+      
+      // Draw histogram (bar chart) of the final attack counts.
+      drawHistogram(ctx, width, height, distribution) {
+        ctx.clearRect(0, 0, width, height);
+        // Draw axes.
+        ctx.strokeStyle = '#000';
+        ctx.beginPath();
+        ctx.moveTo(40, height - 30);
+        ctx.lineTo(width - 20, height - 30);
+        ctx.moveTo(40, height - 30);
+        ctx.lineTo(40, 20);
+        ctx.stroke();
+        
+        const numBars = distribution.length;
+        const barWidth = (width - 60) / numBars;
+        const maxFreq = Math.max(...distribution);
+        const yScale = (height - 50) / (maxFreq || 1);
+        
+        // Draw each bar.
+        for (let i = 0; i < numBars; i++) {
+          const barHeight = distribution[i] * yScale;
+          const x = 40 + i * barWidth;
+          const y = height - 30 - barHeight;
+          ctx.fillStyle = 'rgba(255, 100, 50, 0.8)';
+          ctx.fillRect(x, y, barWidth - 2, barHeight);
+          // Draw bar label.
+          ctx.fillStyle = '#000';
+          ctx.font = '12px sans-serif';
+          ctx.fillText(i.toString(), x + barWidth / 2 - 4, height - 10);
+        }
+      }
+      
+      // Helper function: generate a random hex color.
+      getRandomColor() {
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+          color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color;
+      }
+    }
+    
+    // Event listener: When the form is submitted, run the simulation.
+    document.getElementById('simForm').addEventListener('submit', function(event) {
+      event.preventDefault();
+      const T = parseFloat(document.getElementById('totalTime').value);
+      const n = parseInt(document.getElementById('intervals').value);
+      const numAttackers = parseInt(document.getElementById('attackers').value);
+      const lambda = parseFloat(document.getElementById('lambda').value);
+      
+      const dt = T / n;
+      // Basic validation: ensure probability (λ·dt) is not greater than 1.
+      if (lambda * dt > 1) {
+        alert('Error: Lambda * dt must be ≤ 1.');
+        return;
+      }
+      
+      // Create and run simulation.
+      const simulator = new AttackSimulator(T, n, numAttackers, lambda);
+      simulator.simulate();
+      
+      // Draw trajectories on the first canvas.
+      const trajCanvas = document.getElementById('trajectoryCanvas');
+      const trajCtx = trajCanvas.getContext('2d');
+      simulator.drawTrajectories(trajCtx, trajCanvas.width, trajCanvas.height);
+      
+      // Compute distribution and draw histogram on the second canvas.
+      const { distribution, finalCounts } = simulator.computeDistribution();
+      const histCanvas = document.getElementById('histogramCanvas');
+      const histCtx = histCanvas.getContext('2d');
+      simulator.drawHistogram(histCtx, histCanvas.width, histCanvas.height, distribution);
+      
+      // Compute and display mean and variance of final counts.
+      let sum = 0, sumSq = 0;
+      for (const count of finalCounts) {
+        sum += count;
+        sumSq += count * count;
+      }
+      const mean = sum / finalCounts.length;
+      const variance = (sumSq / finalCounts.length) - (mean * mean);
+      const statsDiv = document.getElementById('stats');
+      statsDiv.innerHTML = `<h3>Statistics</h3>
+        <p>Mean of final counts: ${mean.toFixed(2)}</p>
+        <p>Variance: ${variance.toFixed(2)}</p>`;
+    });
+  </script>
+</body>
+</html>
