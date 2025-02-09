@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Homework 4 – Wiener Process Simulator</title>
+  <style>
+    /* Minimal styling – focus on simulation functionality */
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    input, button {
+      margin: 5px;
+    }
+    canvas {
+      border: 1px solid #000;
+      display: block;
+      margin: 20px auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Homework 4 – Wiener Process Simulator</h1>
+  <p>
+    This simulator approximates the scaling limit of a random walk (i.e. a Wiener process) using Donsker’s invariance principle.  
+    The reference time interval [0, T] is subdivided into n small intervals (with <em>dt = T/n</em>). In each interval the process makes  
+    a jump of magnitude √dt. With probability <em>p</em> (default 0.5) the jump is +√dt, and with probability (1–p) it is –√dt.
+  </p>
+  <div>
+    <label for="T">Time Period (T):</label>
+    <input type="number" id="T" value="10" step="0.1" min="0.1">
+    <label for="subdivisions">Subdivisions (n):</label>
+    <input type="number" id="subdivisions" value="1000" min="10">
+    <label for="trajectories">Trajectories (m):</label>
+    <input type="number" id="trajectories" value="20" min="1">
+    <label for="probability">Jump Probability (p):</label>
+    <input type="number" id="probability" value="0.5" step="0.01" min="0" max="1">
+    <button id="simulateButton">Simulate</button>
+  </div>
+  <canvas id="wienerCanvas" width="800" height="500"></canvas>
+
+  <script>
+    "use strict";
+    
+    /**
+     * WienerProcessSimulator approximates the scaling limit of a random walk (i.e. a Wiener process).  
+     * The time interval [0, T] is subdivided into n intervals (dt = T/n).  
+     * In each interval the process makes a jump of magnitude √dt:  
+     *    +√dt with probability p,  
+     *    −√dt with probability (1 – p).  
+     * For a true Wiener process (zero drift) set p = 0.5.
+     *
+     * We fix the vertical axis to a theoretical range for a symmetric process:  
+     *    y_min = −3·√T and y_max = 3·√T.
+     */
+    class WienerProcessSimulator {
+      constructor() {
+        // Get DOM elements.
+        this.TInput = document.getElementById("T");
+        this.nInput = document.getElementById("subdivisions");
+        this.mInput = document.getElementById("trajectories");
+        this.pInput = document.getElementById("probability");
+        this.simulateButton = document.getElementById("simulateButton");
+        this.canvas = document.getElementById("wienerCanvas");
+        this.ctx = this.canvas.getContext("2d");
+        
+        // Attach event listener.
+        this.simulateButton.addEventListener("click", () => this.runSimulation());
+      }
+      
+      runSimulation() {
+        const T = parseFloat(this.TInput.value);
+        const n = parseInt(this.nInput.value, 10);
+        const m = parseInt(this.mInput.value, 10);
+        const p = parseFloat(this.pInput.value); // jump probability (should be 0.5 for symmetric process)
+        const dt = T / n;
+        const jumpSize = Math.sqrt(dt);
+        
+        // Simulate m independent trajectories.
+        const trajectories = [];
+        for (let i = 0; i < m; i++) {
+          trajectories.push(this.simulateTrajectory(n, dt, jumpSize, p));
+        }
+        
+        // Clear canvas and draw fixed axes.
+        this.clearCanvas();
+        this.drawAxes(T);
+        this.drawTrajectories(T, trajectories);
+      }
+      
+      // Simulate one trajectory over [0, T].
+      simulateTrajectory(n, dt, jumpSize, p) {
+        const times = [];
+        const values = [];
+        let currentValue = 0;
+        times.push(0);
+        values.push(currentValue);
+        for (let step = 1; step <= n; step++) {
+          times.push(step * dt);
+          // With probability p add +sqrt(dt); with probability 1-p subtract sqrt(dt)
+          currentValue += (Math.random() < p ? jumpSize : -jumpSize);
+          values.push(currentValue);
+        }
+        return { times, values };
+      }
+      
+      // Clear the canvas.
+      clearCanvas() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+      
+      // Draw coordinate axes with fixed vertical scaling.
+      // We set y_min = −3·√T and y_max = 3·√T.
+      drawAxes(T) {
+        const ctx = this.ctx;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const padding = 60;
+        
+        const minY = -3 * Math.sqrt(T);
+        const maxY = 3 * Math.sqrt(T);
+        
+        // Draw X-axis.
+        ctx.beginPath();
+        ctx.moveTo(padding, height - padding);
+        ctx.lineTo(width - padding, height - padding);
+        ctx.stroke();
+        // Draw Y-axis.
+        ctx.beginPath();
+        ctx.moveTo(padding, height - padding);
+        ctx.lineTo(padding, padding);
+        ctx.stroke();
+        
+        // Axis labels.
+        ctx.font = "16px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Time", width / 2, height - 20);
+        ctx.save();
+        ctx.translate(20, height / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText("Value", 0, 0);
+        ctx.restore();
+        
+        // X-axis tick marks.
+        const xTicks = 10;
+        const xStep = (width - 2 * padding) / xTicks;
+        for (let i = 0; i <= xTicks; i++) {
+          const x = padding + i * xStep;
+          const tVal = (T * i / xTicks).toFixed(2);
+          ctx.beginPath();
+          ctx.moveTo(x, height - padding);
+          ctx.lineTo(x, height - padding + 5);
+          ctx.stroke();
+          ctx.fillText(tVal, x, height - padding + 20);
+        }
+        
+        // Y-axis tick marks using the fixed scale.
+        const yTicks = 10;
+        const yStep = (height - 2 * padding) / yTicks;
+        for (let i = 0; i <= yTicks; i++) {
+          const y = height - padding - i * yStep;
+          const yVal = (minY + (maxY - minY) * i / yTicks).toFixed(2);
+          ctx.beginPath();
+          ctx.moveTo(padding, y);
+          ctx.lineTo(padding - 5, y);
+          ctx.stroke();
+          ctx.textAlign = "right";
+          ctx.fillText(yVal, padding - 10, y + 5);
+        }
+      }
+      
+      // Draw all trajectories using the fixed vertical scaling.
+      drawTrajectories(T, trajectories) {
+        const ctx = this.ctx;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const padding = 60;
+        
+        // Fixed vertical scale.
+        const minY = -3 * Math.sqrt(T);
+        const maxY = 3 * Math.sqrt(T);
+        
+        // Draw each trajectory.
+        trajectories.forEach((traj, index) => {
+          ctx.beginPath();
+          for (let i = 0; i < traj.times.length; i++) {
+            const t = traj.times[i];
+            const x = padding + t * (width - 2 * padding) / T;
+            const y = height - padding - ((traj.values[i] - minY) * (height - 2 * padding) / (maxY - minY));
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = this.getColor(index);
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+      }
+      
+      // Simple color palette.
+      getColor(index) {
+        const colors = [
+          "#4285F4", "#DB4437", "#F4B400", "#0F9D58", "#AB47BC",
+          "#00ACC1", "#FF7043", "#9E9D24", "#5C6BC0", "#8D6E63"
+        ];
+        return colors[index % colors.length];
+      }
+    }
+    
+    // Initialize and auto-run the simulator.
+    const simulator = new WienerProcessSimulator();
+    window.addEventListener("load", () => simulator.runSimulation());
+  </script>
+</body>
+</html>
