@@ -15,7 +15,7 @@
   <p>
     This simulation approximates a continuous‐time attack process. The total simulation time (T)
     is subdivided into n intervals (dt = T/n). In each interval, for each attacker a “jump” (attack)
-    occurs with probability λ·dt. All important code is included and discussed below.
+    occurs with probability λ·dt.
   </p>
 
   <!-- Input form for simulation parameters -->
@@ -38,7 +38,7 @@
   <!-- Canvas for drawing the trajectories -->
   <canvas id="trajectoryCanvas" width="800" height="400"></canvas>
   <!-- Canvas for drawing the histogram (distribution of final attack counts) -->
-  <canvas id="histogramCanvas" width="400" height="400"></canvas>
+  <canvas id="histogramCanvas" width="800" height="400"></canvas>
 
   <!-- Container for displaying computed statistics -->
   <div id="stats"></div>
@@ -165,9 +165,10 @@
       }
     }
     
-    // Event listener: When the form is submitted, run the simulation.
-    document.getElementById('simForm').addEventListener('submit', function(event) {
-      event.preventDefault();
+    // Refactored simulation function called on form submission and on page load.
+    function runSimulation(event) {
+      if (event) event.preventDefault();
+      
       const T = parseFloat(document.getElementById('totalTime').value);
       const n = parseInt(document.getElementById('intervals').value);
       const numAttackers = parseInt(document.getElementById('attackers').value);
@@ -207,7 +208,14 @@
       statsDiv.innerHTML = `<h3>Statistics</h3>
         <p>Mean of final counts: ${mean.toFixed(2)}</p>
         <p>Variance: ${variance.toFixed(2)}</p>`;
-    });
+    }
+    
+    // Attach event listener to the form.
+    document.getElementById('simForm').addEventListener('submit', runSimulation);
+    
+    // Automatically run the simulation on page load with default parameters.
+    window.addEventListener('DOMContentLoaded', runSimulation);
   </script>
 </body>
 </html>
+
