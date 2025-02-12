@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Unified SDE Simulator with Distributions & Statistics</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    input, select, button { margin: 5px; }
+    canvas { border: 1px solid #ccc; margin-top: 20px; display: block; }
+    h2 { margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Unified SDE Simulator with Distributions & Statistics</h1>
+  <p>
+    Simulate various stochastic differential equations (SDEs) using the Euler–Maruyama method.
+  </p>
+  <!-- Simulation Parameters -->
+  <div>
+    <label for="T">Total Time (T):</label>
+    <input type="number" id="T" value="1" step="0.1" min="0.1">
+    <label for="steps">Time Steps (N):</label>
+    <input type="number" id="steps" value="1000" min="10">
+    <label for="trajectories">Trajectories (M):</label>
+    <input type="number" id="trajectories" value="10" min="1">
+  </div>
+  <div>
+    <label for="modelSelect">Select Model:</label>
+    <select id="modelSelect">
+      <option value="brownian">Brownian Motion</option>
+      <option value="ou">Ornstein–Uhlenbeck</option>
+      <option value="gbm">Geometric Brownian Motion</option>
+    </select>
+  </div>
+  <!-- Model-Specific Parameters -->
+  <div id="parameters"></div>
+  <div>
+    <label for="intermediateStep">Intermediate Step (t* index):</label>
+    <input type="number" id="intermediateStep" value="500" min="1">
+  </div>
+  <button id="simulateButton">Simulate</button>
+  
+  <!-- Trajectories Canvas -->
+  <canvas id="sdeCanvas" width="800" height="500"></canvas>
+  
+  <!-- Intermediate Histogram -->
+  <h2>Intermediate Distribution</h2>
+  <canvas id="intermediateHistogramCanvas" width="800" height="400"></canvas>
+  
+  <!-- Final Histogram -->
+  <h2>Final Distribution</h2>
+  <canvas id="finalHistogramCanvas" width="800" height="400"></canvas>
+  
+  <!-- Statistics -->
+  <div id="stats"></div>
+  
+  <script>
+    "use strict";
+    
+    // Central class: SDESimulator uses Euler–Maruyama to simulate a given SDE.
+    class SDESimulator {
+      constructor(T, N, M, model, params) {
+        this.T = T;           // Total simulation time
+        this.N = N;           // Number of time steps
+        this.M = M;           // Number of trajectories
+        this.dt = T / N;      // Time increment
+        this.model = model;   // Model identifier: 'brownian', 'ou', or 'gbm'
+        this.params = params; // Model-specific parameters
+        this.trajectories = [];
+      }
+      
+      // Drift function μ(t, x)
+      drift(t, x) {
+        switch(this.model) {
+          case 'brownian':
+            return 0;
+          case 'ou':  // OU: dx = θ(μ - x) dt + σ dW
+            return this.params.theta * (this.params.mu - x);
+          case 'gbm': // GBM: dx = μ·x dt + σ·x dW
+            return this.params.mu * x;
+          default:
+            return 0;
+        }
+      }
+      
+      // Diffusion function σ(t, x)
+      diffusion(t, x) {
+        switch(this.model) {
+          case 'brownian':
+            return 1;
+          case 'ou':
+            return this.params.sigma;
+          case 'gbm':
+            return this.params.sigma * x;
+          default:
+            return 1;
+        }
+      }
+      
+      // Generate one trajectory using Euler–Maruyama integration.
+      simulateTrajectory() {
+        let x = (this.model === 'gbm') ? (this.params.x0 || 1) : 0;
+        let traj = [x];
+        let t = 0;
+        for (let i = 0; i < this.N; i++) {
+          t += this.dt;
+          let dW = Math.sqrt(this.dt) * this.randomNormal();
+          x = x + this.drift(t, x) * this.dt + this.diffusion(t, x) * dW;
+          traj.push(x);
+        }
+        return traj;
+      }
+      
+      // Generate M trajectories.
+      simulate() {
+        this.trajectories = [];
+        for (let i = 0; i < this.M; i++) {
+          this.trajectories.push(this.simulateTrajectory());
+        }
+      }
+      
+      // Generate a standard normal random variable using Box–Muller.
+      randomNormal() {
+        let u = 0, v = 0;
+        while(u === 0) u = Math.random();
+        while(v === 0) v = Math.random();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+    }
+    
+    // Utility: get a color from a palette.
+    function getColor(index) {
+      const colors = [
+        "#4285F4", "#DB4437", "#F4B400", "#0F9D58", "#AB47BC",
+        "#00ACC1", "#FF7043", "#9E9D24", "#5C6BC0", "#8D6E63"
+      ];
+      return colors[index % colors.length];
+    }
+    
+    // Draw trajectories on the main canvas.
+    function drawTrajectories(canvas, trajectories, T) {
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+      ctx.clearRect(0, 0, width, height);
+      const padding = 60;
+      
+      // Draw X and Y axes.
+      ctx.strokeStyle = "#000";
+      ctx.beginPath();
+      ctx.moveTo(padding, height - padding);
+      ctx.lineTo(width - padding, height - padding);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(padding, height - padding);
+      ctx.lineTo(padding, padding);
+      ctx.stroke();
+      
+      // X-axis scaling.
+      const xScale = (width - 2 * padding) / T;
+      
+      // Determine y-axis range from trajectories.
+      let minVal = Infinity, maxVal = -Infinity;
+      trajectories.forEach(traj => {
+        traj.forEach(x => {
+          if (x < minVal) minVal = x;
+          if (x > maxVal) maxVal = x;
+        });
+      });
+      // Add 10% margin.
+      let yMargin = (maxVal - minVal) * 0.1;
+      minVal -= yMargin;
+      maxVal += yMargin;
+      const yScale = (height - 2 * padding) / (maxVal - minVal);
+      
+      // Draw each trajectory.
+      trajectories.forEach((traj, i) => {
+        ctx.beginPath();
+        for (let j = 0; j < traj.length; j++) {
+          let t = j * (T / traj.length);
+          let x = padding + t * xScale;
+          let y = height - padding - (traj[j] - minVal) * yScale;
+          if (j === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = getColor(i);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    }
+    
+    // Compute histogram from an array of numbers (using a fixed number of bins).
+    function computeHistogram(values, binCount) {
+      const minVal = Math.min(...values);
+      const maxVal = Math.max(...values);
+      const binWidth = (maxVal - minVal) / binCount;
+      let bins = new Array(binCount).fill(0);
+      values.forEach(val => {
+        let bin = Math.floor((val - minVal) / binWidth);
+        if (bin >= binCount) bin = binCount - 1;
+        bins[bin]++;
+      });
+      return { bins, minVal, maxVal, binWidth };
+    }
+    
+    // Compute mean and variance from an array of numbers.
+    function computeStats(values) {
+      const n = values.length;
+      let mean = values.reduce((a, b) => a + b, 0) / n;
+      let variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
+      return { mean, variance };
+    }
+    
+    // Draw a histogram (bar chart) on the given canvas.
+    function drawHistogram(canvas, histogramData, title) {
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+      ctx.clearRect(0, 0, width, height);
+      
+      const { bins, minVal, binWidth } = histogramData;
+      const binCount = bins.length;
+      const maxFreq = Math.max(...bins);
+      const margin = 60;
+      
+      // Draw axes.
+      ctx.strokeStyle = "#000";
+      ctx.beginPath();
+      ctx.moveTo(margin, height - margin);
+      ctx.lineTo(width - margin, height - margin);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(margin, height - margin);
+      ctx.lineTo(margin, margin);
+      ctx.stroke();
+      
+      // Draw each bar.
+      const barWidth = (width - 2 * margin) / binCount;
+      for (let i = 0; i < binCount; i++) {
+        const barHeight = (bins[i] / maxFreq) * (height - 2 * margin);
+        const x = margin + i * barWidth;
+        const y = height - margin - barHeight;
+        ctx.fillStyle = "#4285F4";
+        ctx.fillRect(x, y, barWidth - 2, barHeight);
+        // Label: show the approximate mid-bin value and frequency.
+        ctx.fillStyle = "#000";
+        ctx.font = "12px sans-serif";
+        const binLabel = (minVal + (i + 0.5) * binWidth).toFixed(2);
+        ctx.textAlign = "center";
+        ctx.fillText(binLabel, x + barWidth / 2, height - margin + 15);
+        ctx.fillText(bins[i], x + barWidth / 2, y - 5);
+      }
+      
+      // Title.
+      ctx.font = "16px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(title, width / 2, margin / 2);
+    }
+    
+    // Update model-specific parameter UI.
+    function updateParametersUI() {
+      const model = document.getElementById("modelSelect").value;
+      const paramsDiv = document.getElementById("parameters");
+      paramsDiv.innerHTML = "";
+      if (model === "ou") {
+        paramsDiv.innerHTML = `
+          <label for="theta">Theta:</label>
+          <input type="number" id="theta" value="2" step="0.1">
+          <label for="mu">Mu:</label>
+          <input type="number" id="mu" value="0" step="0.1">
+          <label for="sigmaOU">Sigma:</label>
+          <input type="number" id="sigmaOU" value="1" step="0.1">
+        `;
+      } else if (model === "gbm") {
+        paramsDiv.innerHTML = `
+          <label for="muGBM">Mu:</label>
+          <input type="number" id="muGBM" value="0.1" step="0.01">
+          <label for="sigmaGBM">Sigma:</label>
+          <input type="number" id="sigmaGBM" value="0.2" step="0.01">
+          <label for="x0">x₀:</label>
+          <input type="number" id="x0" value="1" step="0.1">
+        `;
+      }
+    }
+    
+    document.getElementById("modelSelect").addEventListener("change", updateParametersUI);
+    updateParametersUI();
+    
+    // Main simulation event.
+    document.getElementById("simulateButton").addEventListener("click", () => {
+      const T = parseFloat(document.getElementById("T").value);
+      const N = parseInt(document.getElementById("steps").value);
+      const M = parseInt(document.getElementById("trajectories").value);
+      const model = document.getElementById("modelSelect").value;
+      
+      let params = {};
+      if (model === "ou") {
+        params.theta = parseFloat(document.getElementById("theta").value);
+        params.mu = parseFloat(document.getElementById("mu").value);
+        params.sigma = parseFloat(document.getElementById("sigmaOU").value);
+      } else if (model === "gbm") {
+        params.mu = parseFloat(document.getElementById("muGBM").value);
+        params.sigma = parseFloat(document.getElementById("sigmaGBM").value);
+        params.x0 = parseFloat(document.getElementById("x0").value);
+      }
+      
+      // Run simulation.
+      const simulator = new SDESimulator(T, N, M, model, params);
+      simulator.simulate();
+      
+      // Draw trajectories.
+      const sdeCanvas = document.getElementById("sdeCanvas");
+      drawTrajectories(sdeCanvas, simulator.trajectories, T);
+      
+      // Get intermediate and final values from trajectories.
+      const intermediateStep = parseInt(document.getElementById("intermediateStep").value);
+      let intermediateValues = [];
+      let finalValues = [];
+      simulator.trajectories.forEach(traj => {
+        // Ensure intermediateStep does not exceed trajectory length.
+        const idx = Math.min(intermediateStep, traj.length - 1);
+        intermediateValues.push(traj[idx]);
+        finalValues.push(traj[traj.length - 1]);
+      });
+      
+      // Compute histograms (using 20 bins).
+      const binCount = 20;
+      const intermediateHist = computeHistogram(intermediateValues, binCount);
+      const finalHist = computeHistogram(finalValues, binCount);
+      
+      // Draw histograms.
+      const intermediateHistCanvas = document.getElementById("intermediateHistogramCanvas");
+      drawHistogram(intermediateHistCanvas, intermediateHist, `Intermediate Distribution (t* = ${intermediateStep})`);
+      const finalHistCanvas = document.getElementById("finalHistogramCanvas");
+      drawHistogram(finalHistCanvas, finalHist, "Final Distribution");
+      
+      // Compute statistics.
+      const interStats = computeStats(intermediateValues);
+      const finalStats = computeStats(finalValues);
+      
+      // Display statistics.
+      const statsDiv = document.getElementById("stats");
+      statsDiv.innerHTML = `
+        <h3>Statistics</h3>
+        <p><strong>Intermediate Distribution (t* = ${intermediateStep})</strong>: Mean = ${interStats.mean.toFixed(2)}, Variance = ${interStats.variance.toFixed(2)}</p>
+        <p><strong>Final Distribution</strong>: Mean = ${finalStats.mean.toFixed(2)}, Variance = ${finalStats.variance.toFixed(2)}</p>
+      `;
+    });
+    
+    // Auto-run simulation on page load.
+    window.addEventListener("load", () => {
+      document.getElementById("simulateButton").click();
+    });
+  </script>
+</body>
+</html>
