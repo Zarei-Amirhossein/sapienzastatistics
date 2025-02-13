@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lebesgue vs Riemann Integration – Uniform Distribution Mean</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+    }
+    input {
+      margin: 5px 0;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border: 1px solid #ccc;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>Lebesgue vs Riemann Integration</h1>
+  <p>
+    This example computes the mean of a uniform distribution on the interval [a, b] using two methods:
+  </p>
+  <ul>
+    <li>
+      <strong>Riemann Integration:</strong> A left‐point approximation of
+      <code>∫[a,b] x · (1/(b–a)) dx</code>.
+    </li>
+    <li>
+      <strong>Lebesgue Integration:</strong> The layer‐cake representation:
+      <code>∫₀^(f(b)) m({x in [a, b] : f(x) > y}) dy</code> where <code>f(x) = x · (1/(b–a))</code>.
+    </li>
+  </ul>
+  <p>
+    <em>Note:</em> For the Lebesgue approach, we require <code>a ≥ 0</code> so that <code>f(x)</code> is nonnegative.
+  </p>
+
+  <h2>Input Parameters</h2>
+  <label for="a">a (start of interval): </label>
+  <input type="number" id="a" value="0" step="any"><br>
+  <label for="b">b (end of interval): </label>
+  <input type="number" id="b" value="10" step="any"><br>
+  <label for="nPoints">Number of Points (Riemann): </label>
+  <input type="number" id="nPoints" value="10000"><br>
+  <label for="nLevels">Number of Levels (Lebesgue): </label>
+  <input type="number" id="nLevels" value="10000"><br>
+  <button onclick="runIntegration()">Compute Mean</button>
+
+  <h2>Results</h2>
+  <pre id="output"></pre>
+
+ 
+
+  <script type="text/javascript">
+    "use strict";
+
+    /**
+     * Computes the Riemann integral of a function f over [a, b] using a left‐point approximation.
+     * @param {Function} f - The function to integrate.
+     * @param {number} a - Start of the interval.
+     * @param {number} b - End of the interval.
+     * @param {number} nPoints - Number of subdivisions.
+     * @returns {number} The approximate integral.
+     */
+    const computeRiemannIntegral = (f, a, b, nPoints) => {
+      const dx = (b - a) / nPoints;
+      let sum = 0;
+      for (let i = 0; i < nPoints; i++) {
+        const x = a + i * dx; // Left endpoint of each subinterval
+        sum += f(x) * dx;
+      }
+      return sum;
+    };
+
+    /**
+     * Computes the measure (length) of the level set { x in [a, b] : f(x) > y }
+     * for f(x) = x/(b–a), which is increasing on [a, b].
+     * @param {number} y - The level.
+     * @param {number} a - Start of the interval.
+     * @param {number} b - End of the interval.
+     * @returns {number} The measure of the level set.
+     */
+    const levelSetMeasure = (y, a, b) => {
+      // Solve f(x) = x/(b–a) > y  ⟹  x > y * (b–a)
+      const xThreshold = y * (b - a);
+      if (xThreshold <= a) {
+        return b - a; // Entire interval [a, b] qualifies
+      } else if (xThreshold >= b) {
+        return 0; // No x in [a, b] satisfies the inequality
+      } else {
+        return b - xThreshold;
+      }
+    };
+
+    /**
+     * Approximates the Lebesgue integral for f(x) = x/(b–a) using the layer‐cake representation:
+     * ∫₀^(f(b)) m({x in [a, b] : f(x) > y}) dy.
+     * @param {number} a - Start of the interval.
+     * @param {number} b - End of the interval.
+     * @param {number} nLevels - Number of level subdivisions.
+     * @returns {number} The approximate integral.
+     */
+    const computeLebesgueIntegral = (a, b, nLevels) => {
+      // f(x) = x/(b–a) ranges from f(a)=a/(b–a) to f(b)=b/(b–a). For a ≥ 0, we start at 0.
+      const fMax = b / (b - a);
+      const dy = fMax / nLevels;
+      let sum = 0;
+      for (let i = 0; i < nLevels; i++) {
+        const y = i * dy;
+        const measure = levelSetMeasure(y, a, b);
+        sum += y * measure * dy;
+      }
+      return sum;
+    };
+
+    /**
+     * Uniform Probability Density Function on [a, b].
+     * @param {number} x - The value to evaluate.
+     * @param {number} a - Start of the interval.
+     * @param {number} b - End of the interval.
+     * @returns {number} The density value.
+     */
+    const uniformPDF = (x, a, b) => (x < a || x > b ? 0 : 1 / (b - a));
+
+    /**
+     * Computes the mean of a uniform distribution on [a, b] using the specified integration method.
+     * @param {number} a - Start of the interval.
+     * @param {number} b - End of the interval.
+     * @param {number} n - Number of subdivisions (points or levels).
+     * @param {Function} method - The integration method to use.
+     * @returns {number} The computed mean.
+     */
+    const computeMean = (a, b, n, method) => {
+      // Define the integrand: x * uniformPDF(x, a, b)
+      const f = (x) => x * uniformPDF(x, a, b);
+      // For Riemann, integrate f(x) over [a, b]
+      if (method === computeRiemannIntegral) {
+        return method(f, a, b, n);
+      }
+      // For Lebesgue, use our corrected level-set approach (valid for a ≥ 0)
+      if (method === computeLebesgueIntegral) {
+        return method(a, b, n);
+      }
+      return 0;
+    };
+
+    /**
+     * Reads user inputs, validates them, computes the mean using both integration methods,
+     * and displays the results.
+     */
+    const runIntegration = () => {
+      const a = parseFloat(document.getElementById('a').value);
+      const b = parseFloat(document.getElementById('b').value);
+      const nPoints = parseInt(document.getElementById('nPoints').value, 10);
+      const nLevels = parseInt(document.getElementById('nLevels').value, 10);
+
+      // Validate inputs: numbers must be valid, b > a, and subdivisions must be positive.
+      if (isNaN(a) || isNaN(b) || isNaN(nPoints) || isNaN(nLevels) || b <= a || nPoints <= 0 || nLevels <= 0) {
+        alert("Please enter valid inputs. Ensure that b > a and subdivisions > 0.");
+        return;
+      }
+      // For Lebesgue integration, ensure a is nonnegative.
+      if (a < 0) {
+        alert("For the Lebesgue integration approach, please ensure that a ≥ 0.");
+        return;
+      }
+
+      // Compute the means using the two integration methods.
+      const riemannMean = computeMean(a, b, nPoints, computeRiemannIntegral);
+      const lebesgueMean = computeMean(a, b, nLevels, computeLebesgueIntegral);
+      const difference = Math.abs(riemannMean - lebesgueMean);
+
+      // The analytical mean for a uniform distribution on [a, b] is (a + b) / 2.
+      const analyticalMean = (a + b) / 2;
+
+      const outputText = `Results:
+==========
+Interval: [${a}, ${b}]
+Number of Points (Riemann): ${nPoints}
+Number of Levels (Lebesgue): ${nLevels}
+
+Mean using Riemann Integral: ${riemannMean.toFixed(6)}
+Mean using Lebesgue Integral: ${lebesgueMean.toFixed(6)}
+Difference: ${difference.toFixed(6)}
+
+Analytical Mean: ${analyticalMean.toFixed(6)}`;
+      document.getElementById('output').textContent = outputText;
+    };
+  </script>
+</body>
+</html>
