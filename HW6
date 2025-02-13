@@ -1,0 +1,159 @@
+  <script>
+    "use strict";
+    
+    // Define the discrete distribution.
+    // Outcomes and corresponding probabilities.
+    const outcomes = [0, 1, 2, 3];
+    const probabilities = [0.1, 0.3, 0.4, 0.2];
+    
+    // Precompute cumulative probabilities for sampling.
+    const cumProbs = [];
+    probabilities.reduce((sum, p, i) => {
+      sum += p;
+      cumProbs[i] = sum;
+      return sum;
+    }, 0);
+    
+    // Theoretical mean and variance.
+    let theoMean = outcomes.reduce((acc, x, i) => acc + x * probabilities[i], 0);
+    let theoVar = outcomes.reduce((acc, x, i) => acc + probabilities[i] * Math.pow(x - theoMean, 2), 0);
+    
+    // Display theoretical statistics.
+    document.getElementById("theoMean").textContent = theoMean.toFixed(2);
+    document.getElementById("theoVar").textContent = theoVar.toFixed(2);
+    
+    // Global state.
+    let sampleCount = 0;
+    let empMean = 0;
+    let M2 = 0; // For variance (Welford’s algorithm)
+    const histogram = new Array(outcomes.length).fill(0);
+    
+    // Canvas for histogram.
+    const histCanvas = document.getElementById("histCanvas");
+    const histCtx = histCanvas.getContext("2d");
+    const canvasWidth = histCanvas.width;
+    const canvasHeight = histCanvas.height;
+    const margin = 40;
+    
+    // Update stats display.
+    function updateStatsDisplay() {
+      document.getElementById("sampleCount").textContent = sampleCount;
+      document.getElementById("empMean").textContent = empMean.toFixed(3);
+      // Use sample variance = M2/(n-1) if sampleCount > 1.
+      const variance = sampleCount > 1 ? M2 / (sampleCount - 1) : 0;
+      document.getElementById("empVar").textContent = variance.toFixed(3);
+    }
+    
+    // Draw the histogram.
+    function drawHistogram() {
+      histCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+      
+      // Compute empirical probabilities.
+      const empProbs = histogram.map(count => count / sampleCount);
+      
+      // Draw axes.
+      histCtx.strokeStyle = "#000";
+      histCtx.beginPath();
+      // X-axis.
+      histCtx.moveTo(margin, canvasHeight - margin);
+      histCtx.lineTo(canvasWidth - margin, canvasHeight - margin);
+      // Y-axis.
+      histCtx.moveTo(margin, canvasHeight - margin);
+      histCtx.lineTo(margin, margin);
+      histCtx.stroke();
+      
+      // Draw bars.
+      const barWidth = (canvasWidth - 2 * margin) / outcomes.length;
+      for (let i = 0; i < outcomes.length; i++) {
+        const empProb = empProbs[i] || 0;
+        const barHeight = empProb * (canvasHeight - 2 * margin);
+        const x = margin + i * barWidth;
+        const y = canvasHeight - margin - barHeight;
+        
+        // Draw empirical bar.
+        histCtx.fillStyle = "#4285F4";
+        histCtx.fillRect(x, y, barWidth - 2, barHeight);
+        
+        // Draw theoretical line.
+        const theoProb = probabilities[i];
+        const theoY = canvasHeight - margin - (theoProb * (canvasHeight - 2 * margin));
+        histCtx.strokeStyle = "red";
+        histCtx.beginPath();
+        histCtx.moveTo(x, theoY);
+        histCtx.lineTo(x + barWidth - 2, theoY);
+        histCtx.stroke();
+        
+        // Draw outcome label.
+        histCtx.fillStyle = "#000";
+        histCtx.font = "14px Arial";
+        histCtx.textAlign = "center";
+        histCtx.fillText(outcomes[i], x + barWidth / 2 - 1, canvasHeight - margin + 15);
+        
+        // Draw frequency/empirical probability above the bar.
+        histCtx.fillText(empProb.toFixed(2), x + barWidth / 2 - 1, y - 5);
+      }
+    }
+    
+    // Function to generate a random outcome from the distribution.
+    function sampleOutcome() {
+      const r = Math.random();
+      for (let i = 0; i < cumProbs.length; i++) {
+        if (r < cumProbs[i]) {
+          return outcomes[i];
+        }
+      }
+      return outcomes[outcomes.length - 1]; // Fallback
+    }
+    
+    // Process one new sample: update histogram and statistics.
+    function processSample() {
+      const x = sampleOutcome();
+      sampleCount++;
+      
+      // Update histogram.
+      const index = outcomes.indexOf(x);
+      if (index !== -1) {
+        histogram[index]++;
+      }
+      
+      // Update mean and variance using Welford's algorithm.
+      const delta = x - empMean;
+      empMean += delta / sampleCount;
+      M2 += delta * (x - empMean);
+      
+      updateStatsDisplay();
+      drawHistogram();
+    }
+    
+    // Simulation control.
+    let simulationInterval = null;
+    const delay = 50; // milliseconds per sample
+    
+    // Start simulation.
+    document.getElementById("startBtn").addEventListener("click", () => {
+      if (!simulationInterval) {
+        simulationInterval = setInterval(processSample, delay);
+      }
+    });
+    
+    // Reset simulation.
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      clearInterval(simulationInterval);
+      simulationInterval = null;
+      sampleCount = 0;
+      empMean = 0;
+      M2 = 0;
+      for (let i = 0; i < histogram.length; i++) {
+        histogram[i] = 0;
+      }
+      updateStatsDisplay();
+      drawHistogram();
+    });
+    
+    // Auto-run simulation on page load (optional)
+    window.addEventListener("load", () => {
+      // Optionally start simulation immediately:
+      // simulationInterval = setInterval(processSample, delay);
+    });
+    
+  </script>
