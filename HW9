@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sampling Variances Simulation</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      color: #333;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    #controls {
+      margin-bottom: 20px;
+      padding: 10px;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      width: 90%;
+      max-width: 800px;
+    }
+    .input-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .input-group label {
+      flex: 1;
+      min-width: 150px;
+      margin-right: 10px;
+    }
+    .input-group input[type="text"],
+    .input-group input[type="number"] {
+      flex: 2;
+      padding: 5px;
+      margin-right: 10px;
+    }
+    .input-group input[type="checkbox"] {
+      margin-left: 10px;
+    }
+    #controls button {
+      padding: 8px 16px;
+      background: #4CAF50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #controls button:hover {
+      background: #45a049;
+    }
+    canvas {
+      background: #fff;
+      border: 1px solid #ccc;
+      margin-top: 10px;
+    }
+    p {
+      font-size: 14px;
+      max-width: 800px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sampling Variances Simulation</h1>
+  <div id="controls">
+    <!-- Parent distribution inputs -->
+    <div class="input-group">
+      <label for="valuesInput">Values (comma-separated):</label>
+      <input type="text" id="valuesInput" value="1,2,3,4,5" />
+    </div>
+    <div class="input-group">
+      <label for="probabilitiesInput">Probabilities (comma-separated):</label>
+      <input type="text" id="probabilitiesInput" value="0.1,0.2,0.3,0.2,0.2" />
+    </div>
+    <!-- Sample size and number of samples -->
+    <div class="input-group">
+      <label for="sampleSizeN">Sample Size (n):</label>
+      <input type="number" id="sampleSizeN" value="30" min="1" />
+      <label for="numSamplesM">Number of Samples (m):</label>
+      <input type="number" id="numSamplesM" value="1000" min="1" />
+    </div>
+    <!-- Option for corrected variance -->
+    <div class="input-group">
+      <label for="correctedCheckbox">Use corrected sample variance (n-1):</label>
+      <input type="checkbox" id="correctedCheckbox" checked />
+    </div>
+    <button id="computeButton">Compute Sampling Variances</button>
+  </div>
+
+  <div>
+    <h2>Distribution of Sampling Variances</h2>
+    <canvas id="distributionCanvas" width="500" height="300"></canvas>
+  </div>
+
+  <p>
+    <strong>Parent Distribution:</strong> Theoretical Mean: <span id="theoreticalMean"></span>,
+    Theoretical Variance: <span id="theoreticalVariance"></span>
+  </p>
+  <p>
+    <strong>Sampling Variances:</strong> Empirical Avg Variance: <span id="observedMean"></span>,
+    Variance of Variances: <span id="observedVariance"></span>
+  </p>
+  <p id="discussion">
+    <em>Discussion:</em> When using the corrected sample variance (dividing by n-1), the average of the sample variances is an unbiased estimator of the parent variance. Using the uncorrected version (dividing by n) typically underestimates the true variance by a factor of (n-1)/n. The histogram shows the variability of these variance estimates over many samples.
+  </p>
+
+  <script>
+    "use strict";
+
+    // The SamplingVarianceSimulation class encapsulates all simulation logic.
+    class SamplingVarianceSimulation {
+      constructor() {
+        // Cache DOM elements.
+        this.valuesInput = document.getElementById("valuesInput");
+        this.probabilitiesInput = document.getElementById("probabilitiesInput");
+        this.sampleSizeInput = document.getElementById("sampleSizeN");
+        this.numSamplesInput = document.getElementById("numSamplesM");
+        this.correctedCheckbox = document.getElementById("correctedCheckbox");
+
+        this.theoreticalMeanElem = document.getElementById("theoreticalMean");
+        this.theoreticalVarianceElem = document.getElementById("theoreticalVariance");
+        this.observedMeanElem = document.getElementById("observedMean");
+        this.observedVarianceElem = document.getElementById("observedVariance");
+
+        this.canvas = document.getElementById("distributionCanvas");
+        this.ctx = this.canvas.getContext("2d");
+
+        // Arrays to hold parent distribution data.
+        this.values = [];
+        this.probabilities = [];
+
+        // Bind the simulation function to the button.
+        document.getElementById("computeButton").addEventListener("click", () => {
+          this.computeSamplingVariances();
+        });
+      }
+
+      // Helper: compute the mean of an array.
+      _calculateMean(arr) {
+        return arr.reduce((sum, x) => sum + x, 0) / arr.length;
+      }
+
+      // Helper: compute the variance of an array.
+      _calculateVariance(arr) {
+        const mean = this._calculateMean(arr);
+        return arr.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / arr.length;
+      }
+
+      // Parse inputs and validate probabilities.
+      parseInputs() {
+        this.values = this.valuesInput.value.split(",").map(v => Number(v.trim()));
+        this.probabilities = this.probabilitiesInput.value.split(",").map(p => Number(p.trim()));
+        const probSum = this.probabilities.reduce((sum, p) => sum + p, 0);
+        if (Math.abs(probSum - 1) > 0.01) {
+          alert("Probabilities must sum to 1.");
+          return false;
+        }
+        this.calculateTheoreticalStats();
+        return true;
+      }
+
+      // Compute theoretical mean and variance for the parent distribution.
+      calculateTheoreticalStats() {
+        const theoMean = this._calculateMean(this.values.map((v, i) => v * this.probabilities[i]));
+        let theoVariance = 0;
+        for (let i = 0; i < this.values.length; i++) {
+          theoVariance += this.probabilities[i] * Math.pow(this.values[i] - theoMean, 2);
+        }
+        this.theoreticalMeanElem.textContent = theoMean.toFixed(2);
+        this.theoreticalVarianceElem.textContent = theoVariance.toFixed(2);
+      }
+
+      // Generate a single sample value from the parent distribution.
+      generateSample() {
+        const random = Math.random();
+        let cumulative = 0;
+        for (let i = 0; i < this.probabilities.length; i++) {
+          cumulative += this.probabilities[i];
+          if (random < cumulative) {
+            return this.values[i];
+          }
+        }
+        return this.values[this.values.length - 1];
+      }
+
+      // Main function: compute sample variances for m samples of size n.
+      computeSamplingVariances() {
+        if (!this.parseInputs()) {
+          return;
+        }
+        const n = Number(this.sampleSizeInput.value);
+        const m = Number(this.numSamplesInput.value);
+        const useCorrected = this.correctedCheckbox.checked;
+
+        if (n <= 0 || m <= 0) {
+          alert("Sample size and number of samples must be positive.");
+          return;
+        }
+        if (useCorrected && n === 1) {
+          alert("Corrected variance (n-1) cannot be computed for sample size 1. Using uncorrected variance.");
+        }
+
+        const sampleVariances = [];
+
+        // Generate m samples and compute each sample's variance.
+        for (let i = 0; i < m; i++) {
+          const sample = [];
+          for (let j = 0; j < n; j++) {
+            sample.push(this.generateSample());
+          }
+          const sampleMean = this._calculateMean(sample);
+          const sumSquaredDiffs = sample.reduce((acc, val) => acc + Math.pow(val - sampleMean, 2), 0);
+          let variance;
+          if (useCorrected && n > 1) {
+            variance = sumSquaredDiffs / (n - 1);
+          } else {
+            variance = sumSquaredDiffs / n;
+          }
+          sampleVariances.push(variance);
+        }
+
+        // Compute the empirical average variance and the variance of these variances.
+        const avgSampleVariance = this._calculateMean(sampleVariances);
+        const varianceOfVariances = this._calculateVariance(sampleVariances);
+
+        this.observedMeanElem.textContent = avgSampleVariance.toFixed(2);
+        this.observedVarianceElem.textContent = varianceOfVariances.toFixed(2);
+
+        // Draw the histogram of sample variances.
+        this.drawSamplingVariancesDistribution(sampleVariances);
+      }
+
+      // Draw a histogram showing the frequency distribution of sample variances.
+      drawSamplingVariancesDistribution(sampleVariances) {
+        // Clear canvas.
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const binCount = 20;
+        const minValue = Math.min(...sampleVariances);
+        const maxValue = Math.max(...sampleVariances);
+        const binWidth = (maxValue - minValue) / binCount;
+        const bins = new Array(binCount).fill(0);
+
+        // Populate bins.
+        sampleVariances.forEach(val => {
+          let binIndex = Math.floor((val - minValue) / binWidth);
+          if (binIndex >= binCount) binIndex = binCount - 1;
+          bins[binIndex]++;
+        });
+
+        // Draw bars.
+        const barWidth = this.canvas.width / binCount;
+        this.ctx.fillStyle = 'blue';
+        for (let i = 0; i < binCount; i++) {
+          const barHeight = (bins[i] / sampleVariances.length) * this.canvas.height;
+          this.ctx.fillRect(i * barWidth, this.canvas.height - barHeight, barWidth - 2, barHeight);
+        }
+      }
+    }
+
+    // Instantiate and start the simulation.
+    const simulation = new SamplingVarianceSimulation();
+  </script>
+</body>
+</html>
